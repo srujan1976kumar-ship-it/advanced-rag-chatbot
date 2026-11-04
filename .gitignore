@@ -1,0 +1,23 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# Environment variables and secrets
+.env
+.env.*
+
+# Local databases and uploaded documents
+*.db
+chroma_db/
+data/
+*.pdf
+
+# Editor and operating system files
+.vscode/
+.DS_Store
+Thumbs.db
