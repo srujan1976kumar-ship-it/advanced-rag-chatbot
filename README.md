@@ -1,73 +1,158 @@
-﻿# Advanced RAG Chatbot
+﻿# 🤖 Advanced RAG Chatbot
 
-An AI-powered Retrieval-Augmented Generation chatbot that allows users to upload PDF documents and ask questions based on their content.
+An AI-powered document question-answering application built using Retrieval-Augmented Generation (RAG). Upload PDF documents, ask questions, and receive document-grounded answers with source citations.
 
-## Features
+## 🚀 Features
 
-- Upload multiple PDF documents
-- Extract text from PDFs
-- Semantic search using Sentence Transformers
-- Vector storage using ChromaDB
-- AI responses using Ollama and Llama 3.2
-- Select specific PDFs for question answering
-- Source citations with page numbers
-- Conversation history using SQLite
-- PDF summarization
-- Delete uploaded documents
+- Upload multiple PDF documents.
+- Extract and process PDF text.
+- Generate embeddings using SentenceTransformers.
+- Store document vectors using ChromaDB.
+- Retrieve relevant document sections.
+- Generate answers using the local Ollama LLM.
+- Select multiple PDFs for question answering.
+- Display source filenames and page numbers.
+- View retrieval distance for retrieved sources.
+- Maintain chat history using SQLite.
+- Delete uploaded documents.
+- Export conversations as TXT and PDF files.
+- Streamlit-based interactive user interface.
 
-## Technologies
+## 🛠️ Technologies Used
 
-- Python
-- FastAPI
-- Streamlit
-- Ollama
-- Llama 3.2
-- ChromaDB
-- Sentence Transformers
-- SQLite
-- PyPDF
+| Technology | Purpose |
+|---|---|
+| Python | Backend programming |
+| FastAPI | Backend API |
+| Streamlit | Frontend interface |
+| Ollama | Local language model |
+| Llama 3.2 | Text generation |
+| ChromaDB | Vector database |
+| SentenceTransformers | Text embeddings |
+| SQLite | Chat history |
+| PyPDF | PDF text extraction |
+| ReportLab | PDF export |
 
-## Requirements
+## 📁 Project Structure
 
-- Python 3.10 or newer
-- Ollama
-- Llama 3.2 model
+```text
+advanced-rag-chatbot/
+│
+├── backend/
+│   ├── __init__.py
+│   ├── main.py
+│   ├── rag.py
+│   └── history.py
+│
+├── frontend/
+│   └── app.py
+│
+├── chroma_db/
+├── README.md
+├── requirements.txt
+└── .gitignore
+```
 
-## Installation
+## ⚙️ Installation and Setup
 
-Install dependencies:
+### 1. Clone the repository
 
-    pip install -r requirements.txt
+```bash
+git clone https://github.com/srujan1976kumar-ship-it/advanced-rag-chatbot.git
+cd advanced-rag-chatbot
+```
 
-Make sure Ollama is running and Llama 3.2 is available.
+### 2. Create a virtual environment
 
-## Run the Backend
+Windows:
 
-    python -m uvicorn backend.main:app --reload
+```powershell
+py -m venv .venv
+```
 
-## Run the Frontend
+### 3. Activate the environment
 
-Open another terminal:
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
 
-    python -m streamlit run frontend/app.py
+### 4. Install dependencies
 
-Open the application:
+```powershell
+pip install -r requirements.txt
+```
 
-http://localhost:8501
+### 5. Install and start Ollama
 
-Backend API documentation:
+Install Ollama, then download the model:
 
-http://127.0.0.1:8000/docs
+```bash
+ollama pull llama3.2
+```
 
-## Project Structure
+Make sure the Ollama service is running.
 
-    advanced-rag-chatbot/
-    ├── backend/
-    ├── frontend/
-    ├── .gitignore
-    ├── README.md
-    └── requirements.txt
+## ▶️ Run the Application
 
-## Note
+### Start the FastAPI backend
 
-Uploaded PDFs, local databases, ChromaDB storage, and virtual environments are excluded from GitHub.
+Open the first terminal:
+
+```powershell
+python -m uvicorn backend.main:app --reload
+```
+
+Backend:
+
+`http://127.0.0.1:8000`
+
+API documentation:
+
+`http://127.0.0.1:8000/docs`
+
+### Start the Streamlit frontend
+
+Open a second terminal:
+
+```powershell
+python -m streamlit run frontend/app.py
+```
+
+Frontend:
+
+`http://localhost:8501`
+
+## 💡 How It Works
+
+1. Upload PDF documents through the Streamlit interface.
+2. Extract text from the uploaded documents.
+3. Split the text into smaller chunks.
+4. Generate embeddings for the chunks.
+5. Store embeddings and metadata in ChromaDB.
+6. Convert the user's question into an embedding.
+7. Retrieve relevant document chunks.
+8. Send the retrieved context to the Ollama language model.
+9. Display the generated answer with source references.
+
+## 🎯 Project Objective
+
+To develop an intelligent document assistant that uses Retrieval-Augmented Generation to retrieve relevant information from uploaded PDF documents and provide context-aware answers with source citations.
+
+## 🔮 Future Enhancements
+
+- Support additional document formats.
+- Improve retrieval and reranking.
+- Add user authentication.
+- Add document comparison.
+- Improve response evaluation.
+- Add more advanced document analytics.
+
+## 👨‍💻 Author
+
+**Sai Srujan**
+
+GitHub: https://github.com/srujan1976kumar-ship-it
+
+---
+
+*Built with Python, FastAPI, Streamlit, ChromaDB, and Ollama.*

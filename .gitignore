@@ -21,3 +21,5 @@ data/
 .vscode/
 .DS_Store
 Thumbs.db
+
+chat_history.db

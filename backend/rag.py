@@ -80,15 +80,19 @@ def process_pdf(file_path):
     return len(all_chunks)
 
 
+
 def retrieve_documents(question, top_k=4, document_ids=None):
     if collection.count() == 0:
         return []
 
-    query_embedding = embedding_model.encode(question).tolist()
+    query_embedding = embedding_model.encode(
+        question
+    ).tolist()
 
     query_args = {
         "query_embeddings": [query_embedding],
-        "n_results": min(top_k, collection.count())
+        "n_results": min(top_k, collection.count()),
+        "include": ["documents", "metadatas", "distances"]
     }
 
     if document_ids:
@@ -100,15 +104,22 @@ def retrieve_documents(question, top_k=4, document_ids=None):
 
     documents = results["documents"][0]
     metadatas = results["metadatas"][0]
+    distances = results["distances"][0]
 
-    return [
-        {
+    retrieved = []
+
+    for document, metadata, distance in zip(
+        documents, metadatas, distances
+    ):
+        retrieved.append({
             "text": document,
             "source": metadata["source"],
-            "page": metadata["page"]
-        }
-        for document, metadata in zip(documents, metadatas)
-    ]
+            "page": metadata["page"],
+            "distance": float(distance)
+        })
+
+    return retrieved
+
 
 def delete_document(document_id):
 
