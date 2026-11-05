@@ -1,14 +1,18 @@
+
+import os
+import uuid
+from pathlib import Path
+from typing import Literal
+
+from fastapi import FastAPI, HTTPException, UploadFile, File
+from openai import OpenAI, OpenAIError
+from pydantic import BaseModel, Field
+
 from backend.history import (
     save_message,
     get_history,
     clear_history
 )
-from fastapi import FastAPI, HTTPException, UploadFile, File
-from pydantic import BaseModel, Field
-from pathlib import Path
-from typing import Literal
-import requests
-import uuid
 
 from backend.rag import (
     process_pdf,
@@ -17,10 +21,27 @@ from backend.rag import (
     collection
 )
 
+
 app = FastAPI(title="Advanced RAG Chatbot")
 
-OLLAMA_URL = "http://localhost:11434/api/chat"
-MODEL = "llama3.2"
+
+# --------------------------------------------------
+# OpenAI configuration
+# --------------------------------------------------
+
+OPENAI_MODEL = "gpt-4o-mini"
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+client = (
+    OpenAI(api_key=OPENAI_API_KEY)
+    if OPENAI_API_KEY
+    else None
+)
+
+
+# --------------------------------------------------
+# Project directories
+# --------------------------------------------------
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
@@ -29,16 +50,25 @@ DATA_DIR.mkdir(exist_ok=True)
 MAX_FILE_SIZE = 20 * 1024 * 1024
 
 
+# --------------------------------------------------
+# Request models
+# --------------------------------------------------
+
 class ChatMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str
-    
+
 
 class ChatRequest(BaseModel):
     message: str
     history: list[ChatMessage] = Field(default_factory=list)
     session_id: str = "local-user"
     document_ids: list[str] = Field(default_factory=list)
+
+
+# --------------------------------------------------
+# Home endpoint
+# --------------------------------------------------
 
 @app.get("/")
 def home():
@@ -47,13 +77,24 @@ def home():
     }
 
 
+# --------------------------------------------------
+# Health endpoint
+# --------------------------------------------------
+
 @app.get("/health")
 def health():
     return {
         "status": "healthy",
-        "model": MODEL,
+        "model": OPENAI_MODEL,
+        "llm_configured": client is not None,
         "documents_indexed": collection.count()
     }
+
+
+# --------------------------------------------------
+# List uploaded documents
+# --------------------------------------------------
+
 @app.get("/documents")
 def list_documents():
     documents = []
@@ -76,12 +117,22 @@ def list_documents():
         "total_documents": len(documents),
         "documents": documents
     }
+
+
+# --------------------------------------------------
+# Read chat history
+# --------------------------------------------------
+
 @app.get("/history/{session_id}")
 def read_history(session_id: str):
     return {
         "messages": get_history(session_id)
     }
 
+
+# --------------------------------------------------
+# Clear chat history
+# --------------------------------------------------
 
 @app.delete("/history/{session_id}")
 def delete_history(session_id: str):
@@ -91,8 +142,14 @@ def delete_history(session_id: str):
         "message": "Chat history cleared successfully."
     }
 
+
+# --------------------------------------------------
+# Upload and index PDF
+# --------------------------------------------------
+
 @app.post("/upload")
 async def upload_pdf(file: UploadFile = File(...)):
+
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(
             status_code=400,
@@ -119,6 +176,7 @@ async def upload_pdf(file: UploadFile = File(...)):
 
     try:
         file_path.write_bytes(content)
+
         chunk_count = process_pdf(str(file_path))
 
         return {
@@ -130,11 +188,17 @@ async def upload_pdf(file: UploadFile = File(...)):
 
     except Exception as error:
         file_path.unlink(missing_ok=True)
+
         raise HTTPException(
             status_code=500,
             detail=f"PDF processing failed: {error}"
         )
-        
+
+
+# --------------------------------------------------
+# Delete a document
+# --------------------------------------------------
+
 @app.delete("/documents/{document_id}")
 def remove_document(document_id: str):
 
@@ -169,6 +233,9 @@ def remove_document(document_id: str):
         )
 
 
+# --------------------------------------------------
+# Chat endpoint using OpenAI
+# --------------------------------------------------
 
 @app.post("/chat")
 def chat(request: ChatRequest):
@@ -183,6 +250,13 @@ def chat(request: ChatRequest):
         raise HTTPException(
             status_code=400,
             detail="Upload a PDF before asking questions."
+        )
+
+    # Check OpenAI client configuration
+    if client is None:
+        raise HTTPException(
+            status_code=503,
+            detail="OpenAI API key is not configured."
         )
 
     # Get previous user questions
@@ -214,6 +288,7 @@ def chat(request: ChatRequest):
     context = ""
 
     for index, document in enumerate(documents, start=1):
+
         original_filename = Path(
             document["source"]
         ).name.split("_", 1)[-1]
@@ -252,7 +327,7 @@ DOCUMENT CONTEXT:
 {context}
 """
 
-    # Prepare messages for Ollama
+    # Prepare conversation messages
     messages = [
         {
             "role": "system",
@@ -273,23 +348,15 @@ DOCUMENT CONTEXT:
     })
 
     try:
-        response = requests.post(
-            OLLAMA_URL,
-            json={
-                "model": MODEL,
-                "messages": messages,
-                "stream": False
-            },
-            timeout=240
+        # Generate AI response using global OpenAI client
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=messages,
+            timeout=120
         )
 
-        response.raise_for_status()
+        answer = response.choices[0].message.content or ""
 
-        result = response.json()
-        answer = result["message"]["content"]
-
-        # Prepare source citations
-        
         # Prepare source citations and relevance diagnostics
         sources = [
             {
@@ -323,8 +390,11 @@ DOCUMENT CONTEXT:
             "sources": sources
         }
 
-    except requests.RequestException as error:
+    except OpenAIError:
         raise HTTPException(
             status_code=503,
-            detail=f"Ollama connection failed: {error}"
+            detail=(
+                "OpenAI API request failed. Check your API "
+                "configuration, account access, and usage limits."
+            )
         )
