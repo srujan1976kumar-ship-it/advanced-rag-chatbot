@@ -1,42 +1,66 @@
 
-import streamlit as st
-import requests
+import os
+from io import BytesIO
 
-API_URL = "http://127.0.0.1:8000"
+import requests
+import streamlit as st
+
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Paragraph,
+    Spacer
+)
+from reportlab.lib.styles import getSampleStyleSheet
+
+
+# ==================================================
+# 1. BACKEND CONFIGURATION
+# ==================================================
+
+API_URL = os.getenv(
+    "API_URL",
+    "http://127.0.0.1:8000"
+).rstrip("/")
+
+
+# ==================================================
+# 2. PAGE CONFIGURATION
+# ==================================================
 
 st.set_page_config(
     page_title="Advanced RAG Chatbot",
     page_icon="🤖",
     layout="wide"
 )
-# Custom UI styling
+
+
+# ==================================================
+# 3. CUSTOM UI STYLING
+# ==================================================
+
 st.markdown("""
 <style>
 
-/* Main application */
 .stApp {
     background: linear-gradient(135deg, #101827, #17243a);
     color: #f1f5f9;
 }
 
-/* Main title */
 h1 {
     color: #60a5fa !important;
     font-weight: 800 !important;
 }
 
-/* Section headings */
 h2, h3 {
     color: #bfdbfe !important;
 }
 
-/* Sidebar */
 section[data-testid="stSidebar"] {
     background: #111c2e;
     border-right: 1px solid #334155;
 }
 
-/* Chat messages */
 div[data-testid="stChatMessage"] {
     background: #1e293b;
     border: 1px solid #334155;
@@ -45,7 +69,6 @@ div[data-testid="stChatMessage"] {
     margin-bottom: 12px;
 }
 
-/* Buttons */
 .stButton > button {
     background: #2563eb;
     color: white;
@@ -53,16 +76,13 @@ div[data-testid="stChatMessage"] {
     border-radius: 9px;
     padding: 9px 16px;
     font-weight: 600;
-    transition: 0.2s;
 }
 
 .stButton > button:hover {
     background: #1d4ed8;
-    border: none;
     color: white;
 }
 
-/* Text input */
 .stTextInput input,
 .stChatInput input {
     background: #1e293b;
@@ -71,21 +91,18 @@ div[data-testid="stChatMessage"] {
     border-radius: 10px;
 }
 
-/* File uploader */
 div[data-testid="stFileUploader"] {
     background: #1e293b;
     border-radius: 12px;
     padding: 10px;
 }
 
-/* Expanders */
 div[data-testid="stExpander"] {
     background: #1e293b;
     border: 1px solid #334155;
     border-radius: 10px;
 }
 
-/* Dividers */
 hr {
     border-color: #334155;
 }
@@ -93,7 +110,11 @@ hr {
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize session state
+
+# ==================================================
+# 4. SESSION STATE
+# ==================================================
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
@@ -103,8 +124,17 @@ if "uploaded_docs" not in st.session_state:
 if "history_loaded" not in st.session_state:
     st.session_state.history_loaded = False
 
+if "document_selector" not in st.session_state:
+    st.session_state.document_selector = []
 
-# Load documents from backend
+if "suggested_question" not in st.session_state:
+    st.session_state.suggested_question = None
+
+
+# ==================================================
+# 5. LOAD DOCUMENTS FROM BACKEND
+# ==================================================
+
 try:
     response = requests.get(
         f"{API_URL}/documents",
@@ -113,24 +143,34 @@ try:
 
     if response.ok:
         result = response.json()
+
         st.session_state.uploaded_docs = (
             result.get("documents", [])
         )
     else:
-        st.error(f"Could not load documents: {response.text}")
+        st.error(
+            f"Could not load documents: {response.text}"
+        )
 
 except requests.RequestException as error:
-    st.error(f"Document loading failed: {error}")
+    st.error(
+        f"Document loading failed: {error}"
+    )
 
 
-# Synchronize selected document IDs BEFORE creating the widget
+# ==================================================
+# 6. SYNCHRONIZE DOCUMENT SELECTION
+# ==================================================
+
 valid_document_ids = {
     doc["document_id"]
     for doc in st.session_state.uploaded_docs
 }
 
-if "document_selector" not in st.session_state:
-    st.session_state.document_selector = list(valid_document_ids)
+if not st.session_state.document_selector:
+    st.session_state.document_selector = list(
+        valid_document_ids
+    )
 else:
     st.session_state.document_selector = [
         doc_id
@@ -139,8 +179,12 @@ else:
     ]
 
 
-# Load saved chat history
+# ==================================================
+# 7. LOAD SAVED CHAT HISTORY
+# ==================================================
+
 if not st.session_state.history_loaded:
+
     try:
         saved = requests.get(
             f"{API_URL}/history/local-user",
@@ -155,15 +199,24 @@ if not st.session_state.history_loaded:
         st.session_state.history_loaded = True
 
     except requests.RequestException as error:
-        st.warning(f"Could not load chat history: {error}")
+        st.warning(
+            f"Could not load chat history: {error}"
+        )
+
         st.session_state.history_loaded = True
 
 
-# Sidebar
+# ==================================================
+# 8. SIDEBAR - DOCUMENT MANAGER
+# ==================================================
+
 with st.sidebar:
 
     st.title("📚 Document Manager")
-    st.write("Upload PDF documents to chat with them.")
+
+    st.write(
+        "Upload PDF documents to chat with them."
+    )
 
     uploaded_files = st.file_uploader(
         "Choose PDF files",
@@ -171,26 +224,23 @@ with st.sidebar:
         accept_multiple_files=True
     )
 
-    # Upload documents
+    # ----------------------------------------------
+    # Upload PDF documents
+    # ----------------------------------------------
+
     if st.button(
         "Upload Documents",
         use_container_width=True
     ):
 
         if not uploaded_files:
-            st.warning("Please select a PDF first.")
+            st.warning(
+                "Please select a PDF first."
+            )
 
         else:
-            for uploaded_file in uploaded_files:
 
-                if any(
-                    doc["filename"] == uploaded_file.name
-                    for doc in st.session_state.uploaded_docs
-                ):
-                    st.info(
-                        f"{uploaded_file.name} already uploaded."
-                    )
-                    continue
+            for uploaded_file in uploaded_files:
 
                 try:
                     response = requests.post(
@@ -206,6 +256,7 @@ with st.sidebar:
                     )
 
                     if response.ok:
+
                         result = response.json()
 
                         new_document = {
@@ -214,14 +265,17 @@ with st.sidebar:
                             "chunks": result["chunks_created"]
                         }
 
-                        st.session_state.uploaded_docs.append(
-                            new_document
-                        )
+                        existing_ids = {
+                            doc["document_id"]
+                            for doc in st.session_state.uploaded_docs
+                        }
 
-                        if (
-                            result["document_id"]
-                            not in st.session_state.document_selector
-                        ):
+                        if result["document_id"] not in existing_ids:
+
+                            st.session_state.uploaded_docs.append(
+                                new_document
+                            )
+
                             st.session_state.document_selector.append(
                                 result["document_id"]
                             )
@@ -235,11 +289,17 @@ with st.sidebar:
                         st.error(response.text)
 
                 except requests.RequestException as error:
-                    st.error(f"Upload failed: {error}")
+                    st.error(
+                        f"Upload failed: {error}"
+                    )
 
 
-    # Uploaded documents
+    # ----------------------------------------------
+    # Display uploaded documents
+    # ----------------------------------------------
+
     st.divider()
+
     st.subheader("Uploaded Documents")
 
     if st.session_state.uploaded_docs:
@@ -258,7 +318,8 @@ with st.sidebar:
 
                 try:
                     response = requests.delete(
-                        f"{API_URL}/documents/{document['document_id']}",
+                        f"{API_URL}/documents/"
+                        f"{document['document_id']}",
                         timeout=30
                     )
 
@@ -287,14 +348,22 @@ with st.sidebar:
                         st.error(response.text)
 
                 except requests.RequestException as error:
-                    st.error(f"Deletion failed: {error}")
+                    st.error(
+                        f"Deletion failed: {error}"
+                    )
 
     else:
-        st.caption("No documents uploaded.")
+        st.caption(
+            "No documents uploaded."
+        )
 
 
-    # Document selection
+    # ----------------------------------------------
+    # Select documents
+    # ----------------------------------------------
+
     st.divider()
+
     st.subheader("🎯 Document Selection")
 
     document_options = {
@@ -310,7 +379,10 @@ with st.sidebar:
     )
 
 
-    # Clear chat
+    # ----------------------------------------------
+    # Clear chat history
+    # ----------------------------------------------
+
     st.divider()
 
     if st.button(
@@ -325,42 +397,71 @@ with st.sidebar:
             )
 
             if response.ok:
+
                 st.session_state.messages = []
-                st.success("Chat history cleared.")
+
+                st.success(
+                    "Chat history cleared."
+                )
+
                 st.rerun()
 
             else:
                 st.error(response.text)
 
         except requests.RequestException as error:
-            st.error(f"Could not clear chat: {error}")
+            st.error(
+                f"Could not clear chat: {error}"
+            )
 
 
-    # Backend health
+    # ----------------------------------------------
+    # Backend health status
+    # ----------------------------------------------
+
     st.divider()
+
+    st.subheader("Backend Status")
 
     try:
         health = requests.get(
             f"{API_URL}/health",
-            timeout=5
+            timeout=10
         )
 
         if health.ok:
-            st.success("Backend connected")
+
+            health_data = health.json()
+
+            st.success(
+                "Backend connected"
+            )
 
             st.caption(
                 f"Indexed chunks: "
-                f"{health.json()['documents_indexed']}"
+                f"{health_data['documents_indexed']}"
             )
 
+            if not health_data.get("llm_configured"):
+                st.warning(
+                    "OpenAI API key is not configured."
+                )
+
         else:
-            st.error("Backend unavailable")
+            st.error(
+                "Backend unavailable"
+            )
 
     except requests.RequestException:
-        st.error("Cannot connect to backend")
+        st.error(
+            "Cannot connect to backend"
+        )
 
 
-# Main chatbot dashboard
+# ==================================================
+# 9. MAIN DASHBOARD
+# ==================================================
+
 st.title("🤖 Advanced RAG Chatbot")
 
 st.markdown(
@@ -368,13 +469,20 @@ st.markdown(
 )
 
 st.caption(
-    "Upload PDFs, select documents, and get AI-powered answers with page citations."
+    "Upload PDFs, select documents, and get "
+    "AI-powered answers with page citations."
 )
 
-# Dashboard statistics
+
+# ==================================================
+# 10. DASHBOARD STATISTICS
+# ==================================================
+
 col1, col2, col3 = st.columns(3)
 
-total_pdfs = len(st.session_state.uploaded_docs)
+total_pdfs = len(
+    st.session_state.uploaded_docs
+)
 
 total_chunks = sum(
     doc.get("chunks", 0)
@@ -386,16 +494,31 @@ selected_pdfs = len(
 )
 
 with col1:
-    st.metric("📚 Total PDFs", total_pdfs)
+    st.metric(
+        "📚 Total PDFs",
+        total_pdfs
+    )
 
 with col2:
-    st.metric("🧩 Indexed Chunks", total_chunks)
+    st.metric(
+        "🧩 Indexed Chunks",
+        total_chunks
+    )
 
 with col3:
-    st.metric("🎯 Selected PDFs", selected_pdfs)
+    st.metric(
+        "🎯 Selected PDFs",
+        selected_pdfs
+    )
+
 
 st.divider()
-# Document overview
+
+
+# ==================================================
+# 11. DOCUMENT OVERVIEW
+# ==================================================
+
 st.subheader("📂 Document Overview")
 
 if st.session_state.uploaded_docs:
@@ -405,7 +528,9 @@ if st.session_state.uploaded_docs:
         col1, col2, col3 = st.columns([3, 1, 1])
 
         with col1:
-            st.write(f"📄 **{doc['filename']}**")
+            st.write(
+                f"📄 **{doc['filename']}**"
+            )
 
         with col2:
             st.caption(
@@ -413,22 +538,34 @@ if st.session_state.uploaded_docs:
             )
 
         with col3:
-            if doc["document_id"] in st.session_state.document_selector:
+
+            if doc["document_id"] in (
+                st.session_state.document_selector
+            ):
                 st.success("Selected")
             else:
                 st.caption("Not selected")
 
 else:
-    st.info("No PDF documents uploaded yet.")
+    st.info(
+        "No PDF documents uploaded yet."
+    )
+
 
 st.divider()
 
-# Display previous messages
+
+# ==================================================
+# 12. DISPLAY PREVIOUS MESSAGES
+# ==================================================
+
 for message in st.session_state.messages:
 
     with st.chat_message(message["role"]):
 
-        st.markdown(message["content"])
+        st.markdown(
+            message["content"]
+        )
 
         if message.get("sources"):
 
@@ -450,15 +587,20 @@ for message in st.session_state.messages:
                         )
 
 
-# Welcome screen and suggested questions
+# ==================================================
+# 13. WELCOME SCREEN
+# ==================================================
+
 if not st.session_state.messages:
 
-    st.markdown("## 👋 Welcome to your AI Document Assistant")
+    st.markdown(
+        "## 👋 Welcome to your AI Document Assistant"
+    )
 
     st.write(
         "Ask questions about your uploaded PDFs. "
-        "The chatbot will search your documents and provide "
-        "answers with source references."
+        "The chatbot will search your documents and "
+        "provide answers with source references."
     )
 
     st.markdown("### 💡 Try asking")
@@ -466,62 +608,61 @@ if not st.session_state.messages:
     col1, col2 = st.columns(2)
 
     with col1:
-        if st.button(
-            "📝 Summarize my documents",
-            use_container_width=True
-        ):
-            st.session_state.suggested_question = (
-                "Summarize the selected documents."
-            )
-            st.rerun()
 
         if st.button(
-            "🔍 Find key information",
+            "📄 Find key information",
             use_container_width=True
         ):
+
             st.session_state.suggested_question = (
-                "What are the most important points in the selected documents?"
+                "What are the most important points "
+                "in the selected documents?"
             )
+
             st.rerun()
 
     with col2:
+
         if st.button(
             "📚 Explain the main topics",
             use_container_width=True
         ):
-            st.session_state.suggested_question = (
-                "Explain the main topics covered in the selected documents."
-            )
-            st.rerun()
 
-        if st.button(
-            "❓ Ask about a specific topic",
-            use_container_width=True
-        ):
             st.session_state.suggested_question = (
-                "Explain a specific topic covered in the selected documents."
+                "Explain the main topics covered "
+                "in the selected documents."
             )
+
             st.rerun()
 
 
-# Chat input
-question = st.chat_input(
-    "Ask something about your uploaded documents..."
+# ==================================================
+# 14. CHAT INPUT AND AI RESPONSE
+# ==================================================
+
+suggested_question = (
+    st.session_state.suggested_question
 )
 
-# Use a suggested question when a suggestion button is clicked
-if not question:
-    question = st.session_state.pop(
-        "suggested_question",
-        None
+if suggested_question:
+
+    prompt = suggested_question
+
+    st.session_state.suggested_question = None
+
+else:
+
+    prompt = st.chat_input(
+        "Ask a question about your documents..."
     )
 
-if question:
+
+if prompt:
 
     if not st.session_state.uploaded_docs:
 
         st.warning(
-            "Please upload a PDF document before chatting."
+            "Please upload a PDF first."
         )
 
     elif not st.session_state.document_selector:
@@ -532,13 +673,14 @@ if question:
 
     else:
 
+        # Display user question
         st.session_state.messages.append({
             "role": "user",
-            "content": question
+            "content": prompt
         })
 
         with st.chat_message("user"):
-            st.markdown(question)
+            st.markdown(prompt)
 
         with st.chat_message("assistant"):
 
@@ -547,24 +689,29 @@ if question:
             ):
 
                 try:
+
+                    # Corrected history selection
+                    previous_history = [
+                        {
+                            "role": message["role"],
+                            "content": message["content"]
+                        }
+                        for message in (
+                            st.session_state.messages[:-1][-8:]
+                        )
+                    ]
+
                     response = requests.post(
                         f"{API_URL}/chat",
                         json={
-                            "message": question,
+                            "message": prompt,
+                            "history": previous_history,
                             "session_id": "local-user",
-                            "history": [
-                                {
-                                    "role": message["role"],
-                                    "content": message["content"]
-                                }
-                                for message in
-                                st.session_state.messages[:-1][-8:]
-                            ],
                             "document_ids": (
                                 st.session_state.document_selector
                             )
                         },
-                        timeout=240
+                        timeout=180
                     )
 
                     if response.ok:
@@ -572,7 +719,11 @@ if question:
                         result = response.json()
 
                         answer = result["answer"]
-                        sources = result.get("sources", [])
+
+                        sources = result.get(
+                            "sources",
+                            []
+                        )
 
                         st.markdown(answer)
 
@@ -587,15 +738,6 @@ if question:
                                         f"— Page {source['page']}"
                                     )
 
-                                    distance = source.get("distance")
-
-                                    if distance is not None:
-                                        st.caption(
-                                            f"Retrieval distance: "
-                                            f"{distance:.4f} "
-                                            "(lower is a closer match)"
-                                        )
-
                         st.session_state.messages.append({
                             "role": "assistant",
                             "content": answer,
@@ -603,47 +745,40 @@ if question:
                         })
 
                     else:
+
                         st.error(
-                            f"Chat failed: {response.text}"
+                            f"Request failed: {response.text}"
                         )
+
                         st.session_state.messages.pop()
 
                 except requests.RequestException as error:
+
                     st.error(
-                        f"Backend connection error: {error}"
+                        f"Could not connect to backend: {error}"
                     )
+
                     st.session_state.messages.pop()
-                    # Export chat history
+
+
+# ==================================================
+# 15. TXT CONVERSATION EXPORT
+# ==================================================
+
 st.divider()
+
 st.subheader("📥 Export Conversation")
 
 if st.session_state.messages:
 
-    export_text = "ADVANCED RAG CHATBOT - CONVERSATION\n"
-    export_text += "=" * 45 + "\n\n"
-
-    for message in st.session_state.messages:
-
-        role = message["role"].upper()
-        content = message["content"]
-
-        export_text += f"{role}:\n{content}\n\n"
-
-        if message.get("sources"):
-            export_text += "SOURCES:\n"
-
-            for source in message["sources"]:
-                export_text += (
-                    f"- {source['filename']} "
-                    f"(Page {source['page']})\n"
-                )
-
-            export_text += "\n"
-
-        export_text += "-" * 45 + "\n\n"
+    export_text = "\n\n".join(
+        f"{message['role'].capitalize()}:\n"
+        f"{message['content']}"
+        for message in st.session_state.messages
+    )
 
     st.download_button(
-        label="⬇️ Download Chat History",
+        "⬇️ Download Chat History",
         data=export_text,
         file_name="rag_chat_history.txt",
         mime="text/plain",
@@ -651,20 +786,17 @@ if st.session_state.messages:
     )
 
 else:
-    st.info("Start a conversation to enable chat export.")
-    # PDF conversation export
-from io import BytesIO
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import (
-    SimpleDocTemplate,
-    Paragraph,
-    Spacer
-)
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib import colors
+    st.info(
+        "Start a conversation to enable chat export."
+    )
 
+
+# ==================================================
+# 16. PDF CONVERSATION EXPORT
+# ==================================================
 
 def create_chat_pdf(messages):
+
     buffer = BytesIO()
 
     pdf = SimpleDocTemplate(
@@ -677,6 +809,7 @@ def create_chat_pdf(messages):
     )
 
     styles = getSampleStyleSheet()
+
     story = []
 
     story.append(
@@ -693,13 +826,19 @@ def create_chat_pdf(messages):
         )
     )
 
-    story.append(Spacer(1, 20))
+    story.append(
+        Spacer(1, 20)
+    )
 
     for message in messages:
+
         role = message["role"].capitalize()
 
         story.append(
-            Paragraph(role, styles["Heading3"])
+            Paragraph(
+                role,
+                styles["Heading3"]
+            )
         )
 
         content = (
@@ -711,12 +850,18 @@ def create_chat_pdf(messages):
         )
 
         story.append(
-            Paragraph(content, styles["BodyText"])
+            Paragraph(
+                content,
+                styles["BodyText"]
+            )
         )
 
-        story.append(Spacer(1, 10))
+        story.append(
+            Spacer(1, 10)
+        )
 
         for source in message.get("sources", []):
+
             source_text = (
                 f"Source: {source['filename']} "
                 f"- Page {source['page']}"
@@ -729,11 +874,14 @@ def create_chat_pdf(messages):
                 )
             )
 
-        story.append(Spacer(1, 15))
+        story.append(
+            Spacer(1, 15)
+        )
 
     pdf.build(story)
 
     buffer.seek(0)
+
     return buffer.getvalue()
 
 

@@ -43,12 +43,25 @@ client = (
 # Project directories
 # --------------------------------------------------
 
+# --------------------------------------------------
+# Project directories
+# --------------------------------------------------
+
 BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = BASE_DIR / "data"
-DATA_DIR.mkdir(exist_ok=True)
+
+DATA_DIR = Path(
+    os.getenv(
+        "DATA_DIR",
+        str(BASE_DIR / "data")
+    )
+)
+
+DATA_DIR.mkdir(
+    parents=True,
+    exist_ok=True
+)
 
 MAX_FILE_SIZE = 20 * 1024 * 1024
-
 
 # --------------------------------------------------
 # Request models
