@@ -1,37 +1,82 @@
 ﻿# 🤖 Advanced RAG Chatbot
 
-An AI-powered document question-answering application built using Retrieval-Augmented Generation (RAG). Upload PDF documents, ask questions, and receive document-grounded answers with source citations.
+An AI-powered document question-answering application built using **Retrieval-Augmented Generation (RAG)**. Upload PDF documents, retrieve relevant content using vector similarity search, and generate document-grounded answers with source citations.
 
 ## 🚀 Features
 
-- Upload multiple PDF documents.
-- Extract and process PDF text.
-- Generate embeddings using SentenceTransformers.
-- Store document vectors using ChromaDB.
-- Retrieve relevant document sections.
-- Generate answers using the local Ollama LLM.
-- Select multiple PDFs for question answering.
+- Upload and manage multiple PDF documents.
+- Extract and process PDF text automatically.
+- Split documents into overlapping text chunks.
+- Generate 384-dimensional embeddings using SentenceTransformers.
+- Store document embeddings in PostgreSQL using pgvector.
+- Retrieve relevant content using cosine similarity search.
 - Display source filenames and page numbers.
-- View retrieval distance for retrieved sources.
-- Maintain chat history using SQLite.
-- Delete uploaded documents.
+- Filter retrieval by selected documents.
+- Maintain conversation history using PostgreSQL.
+- Delete uploaded documents and their indexed chunks.
 - Export conversations as TXT and PDF files.
-- Streamlit-based interactive user interface.
+- Interactive Streamlit frontend.
+- FastAPI backend with REST API endpoints.
+- Docker-based containerized deployment.
 
 ## 🛠️ Technologies Used
 
 | Technology | Purpose |
 |---|---|
-| Python | Backend programming |
-| FastAPI | Backend API |
+| Python 3.11 | Backend programming |
+| FastAPI | Backend REST API |
 | Streamlit | Frontend interface |
-| Ollama | Local language model |
-| Llama 3.2 | Text generation |
-| ChromaDB | Vector database |
+| PostgreSQL 16 | Relational database |
+| pgvector | Vector similarity search |
 | SentenceTransformers | Text embeddings |
-| SQLite | Chat history |
+| all-MiniLM-L6-v2 | Embedding model |
+| OpenAI API (optional) | LLM answer generation |
 | PyPDF | PDF text extraction |
 | ReportLab | PDF export |
+| Docker | Containerization |
+
+## 🏗️ Architecture
+
+```text
+             USER
+               |
+               v
+       STREAMLIT FRONTEND
+               |
+               v
+         FASTAPI BACKEND
+               |
+       +-------+-------+
+       |               |
+       v               v
+  PDF PROCESSING   CHAT HISTORY
+       |               |
+       v               v
+  TEXT CHUNKING    POSTGRESQL
+       |
+       v
+  SENTENCE TRANSFORMERS
+       |
+       v
+  384-D EMBEDDINGS
+       |
+       v
+  POSTGRESQL + PGVECTOR
+       |
+       v
+  COSINE SIMILARITY SEARCH
+       |
+       v
+  RETRIEVED DOCUMENT CONTEXT
+       |
+       v
+  LLM ANSWER GENERATION
+       |
+       v
+  ANSWER WITH CITATIONS
+```
+
+**Note:** LLM answer generation is optional and requires an appropriately configured API key. It is currently disabled in the local setup.
 
 ## 📁 Project Structure
 
@@ -47,11 +92,21 @@ advanced-rag-chatbot/
 ├── frontend/
 │   └── app.py
 │
-├── chroma_db/
-├── README.md
+├── data/
+├── backup-before-cloud-migration/
+├── migration-export/
+│
+├── Dockerfile.backend
+├── Dockerfile.frontend
 ├── requirements.txt
-└── .gitignore
+├── requirements.frontend.txt
+├── migrate_to_postgres.py
+├── .dockerignore
+├── .gitignore
+└── README.md
 ```
+
+Private backups and migration exports are local-only and should not be committed to GitHub.
 
 ## ⚙️ Installation and Setup
 
@@ -64,10 +119,8 @@ cd advanced-rag-chatbot
 
 ### 2. Create a virtual environment
 
-Windows:
-
 ```powershell
-py -m venv .venv
+py -3.11 -m venv .venv
 ```
 
 ### 3. Activate the environment
@@ -82,70 +135,109 @@ py -m venv .venv
 pip install -r requirements.txt
 ```
 
-### 5. Install and start Ollama
+### 5. Configure PostgreSQL
 
-Install Ollama, then download the model:
+Create a PostgreSQL database and enable pgvector:
 
-```bash
-ollama pull llama3.2
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
 ```
 
-Make sure the Ollama service is running.
-
-## ▶️ Run the Application
-
-### Start the FastAPI backend
-
-Open the first terminal:
+Configure the database connection using environment variables:
 
 ```powershell
-python -m uvicorn backend.main:app --reload
+$env:PG_HOST="localhost"
+$env:PG_PORT="5433"
+$env:PG_DATABASE="ragdb"
+$env:PG_USER="raguser"
 ```
 
-Backend:
+Set `PG_PASSWORD` securely in your terminal. Never commit database passwords.
 
-`http://127.0.0.1:8000`
+## 🐳 Docker Setup
 
-API documentation:
+The project uses three Docker containers:
 
-`http://127.0.0.1:8000/docs`
+| Container | Service |
+|---|---|
+| rag-postgres | PostgreSQL + pgvector |
+| rag-backend-pg | FastAPI backend |
+| rag-frontend-pg | Streamlit frontend |
 
-### Start the Streamlit frontend
+The application has been tested locally using Docker.
 
-Open a second terminal:
+### Local application URLs
+
+- Frontend: http://localhost:8502
+- Backend: http://localhost:8000
+- API documentation: http://localhost:8000/docs
+- Health check: http://localhost:8000/health
+
+### Check running containers
 
 ```powershell
-python -m streamlit run frontend/app.py
+docker ps
 ```
 
-Frontend:
+### Stop application containers
 
-`http://localhost:8501`
+```powershell
+docker stop rag-frontend-pg rag-backend-pg rag-postgres
+```
+
+### Start existing containers
+
+```powershell
+docker start rag-postgres
+docker start rag-backend-pg
+docker start rag-frontend-pg
+```
 
 ## 💡 How It Works
 
-1. Upload PDF documents through the Streamlit interface.
-2. Extract text from the uploaded documents.
-3. Split the text into smaller chunks.
-4. Generate embeddings for the chunks.
-5. Store embeddings and metadata in ChromaDB.
-6. Convert the user's question into an embedding.
-7. Retrieve relevant document chunks.
-8. Send the retrieved context to the Ollama language model.
-9. Display the generated answer with source references.
+1. The user uploads a PDF through Streamlit.
+2. FastAPI receives and validates the PDF.
+3. PyPDF extracts text from each page.
+4. Extracted text is split into overlapping chunks.
+5. SentenceTransformers generates 384-dimensional embeddings.
+6. PostgreSQL stores document chunks, metadata, and embeddings.
+7. The user's question is converted into an embedding.
+8. pgvector performs cosine-distance similarity search.
+9. Relevant document chunks are retrieved.
+10. The optional LLM uses the retrieved context to generate an answer with source citations.
+
+## 🧪 Testing and Verification
+
+The PostgreSQL + pgvector migration has been tested locally.
+
+| Test | Result |
+|---|---|
+| PostgreSQL connection | Passed |
+| pgvector extension | Passed |
+| PDF document migration | Passed |
+| Document chunk count | 34 |
+| Embedding dimensions | 384 |
+| Chat history table | Passed |
+| Docker backend | Passed |
+| Docker frontend | Passed |
+| API health check | Passed |
+| Document listing | Passed |
+| Vector retrieval | Passed |
+| PDF upload and deletion | Passed |
 
 ## 🎯 Project Objective
 
-To develop an intelligent document assistant that uses Retrieval-Augmented Generation to retrieve relevant information from uploaded PDF documents and provide context-aware answers with source citations.
+To build an intelligent document assistant that combines semantic search and Retrieval-Augmented Generation to retrieve relevant information from PDF documents and provide accurate, context-aware answers with source citations.
 
 ## 🔮 Future Enhancements
 
-- Support additional document formats.
-- Improve retrieval and reranking.
+- Enable optional LLM answer generation.
+- Add document reranking.
+- Support DOCX and additional file formats.
 - Add user authentication.
-- Add document comparison.
-- Improve response evaluation.
-- Add more advanced document analytics.
+- Improve retrieval evaluation.
+- Add document comparison and analytics.
+- Introduce automated deployment workflows.
 
 ## 👨‍💻 Author
 
@@ -155,4 +247,4 @@ GitHub: https://github.com/srujan1976kumar-ship-it
 
 ---
 
-*Built with Python, FastAPI, Streamlit, ChromaDB, and Ollama.*
+*Built with Python, FastAPI, Streamlit, PostgreSQL, pgvector, SentenceTransformers, and Docker.*
